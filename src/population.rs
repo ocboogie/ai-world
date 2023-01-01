@@ -2,7 +2,7 @@ use std::mem::swap;
 
 use rand::Rng;
 
-use crate::{environment::Environment, species::Species};
+use crate::{environment::Environment, innovation_record::InnovationRecord, species::Species};
 
 pub struct Population<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     // TODO: Could have species be a many-to-one relations, then the Species struct might not even
@@ -19,7 +19,11 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
         }
     }
 
-    pub fn evolve(&mut self, rng: &mut impl Rng) {
+    pub fn evolve(
+        &mut self,
+        rng: &mut impl Rng,
+        innovation_record: &mut InnovationRecord<INPUT_SZ, OUTPUT_SZ>,
+    ) {
         self.speciate();
         self.generation += 1;
 
@@ -27,7 +31,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
             .species
             .iter()
             .map(|species| species.average_fitness)
-            .sum()
+            .sum::<f32>()
             / self.species.len() as f32;
 
         for species in self.species.iter_mut() {
@@ -37,7 +41,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
             let offspring =
                 ((species.average_fitness / average_species_fitnesss) * self.size as f32) as usize;
 
-            species.evolve(rng, average_species_fitnesss);
+            species.evolve(rng, innovation_record, offspring);
         }
     }
 

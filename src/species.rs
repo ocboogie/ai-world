@@ -1,5 +1,11 @@
-use crate::{environment::Environment, genome::Genome, organism::Organism};
+use rand::Rng;
 
+use crate::{
+    environment::Environment, genome::Genome, innovation_record::InnovationRecord,
+    organism::Organism,
+};
+
+const MUTATION_PROB: f64 = 0.25;
 const COMPATIBILITY_THRESHOLD: f32 = 3.0;
 
 pub struct Species<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
@@ -35,7 +41,24 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Species<INPUT_SZ, OUTPUT_SZ>
         self.average_fitness = fitness_sum / self.members.len() as f32;
     }
 
-    pub fn evolve(&mut self, rng: &mut impl Rng) {}
+    pub fn evolve(
+        &mut self,
+        rng: &mut impl Rng,
+        innovation_record: &mut InnovationRecord<INPUT_SZ, OUTPUT_SZ>,
+        offspring: usize,
+    ) {
+        self.age += 1;
+        self.members.sort_by(|a, b| a.fitness.total_cmp(&b.fitness));
+        self.members.truncate(offspring);
+
+        for organism in self.members.iter_mut() {
+            if rng.gen_bool(MUTATION_PROB) {
+                organism.genome.mutate(rng, innovation_record)
+            } else {
+                organism.genome = Genome::crossover(&self.champion, &organism.genome, rng);
+            }
+        }
+    }
 
     pub fn from_representative(organism: Organism<INPUT_SZ, OUTPUT_SZ>) -> Self {
         Self {

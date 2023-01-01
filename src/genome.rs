@@ -106,6 +106,22 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         INPUT_SZ + OUTPUT_SZ + self.hidden_nodes + 1
     }
 
+    pub fn connect(
+        &mut self,
+        in_node: Node<INPUT_SZ, OUTPUT_SZ>,
+        out_node: Node<INPUT_SZ, OUTPUT_SZ>,
+        weight: f32,
+        innovation_record: &mut InnovationRecord<INPUT_SZ, OUTPUT_SZ>,
+    ) {
+        self.connections.push(Connection {
+            in_node,
+            out_node,
+            weight,
+            enabled: true,
+            innovation_number: innovation_record.get(in_node, out_node),
+        })
+    }
+
     pub fn crossover(
         fitter_genome: &Genome<INPUT_SZ, OUTPUT_SZ>,
         other_genome: &Genome<INPUT_SZ, OUTPUT_SZ>,
