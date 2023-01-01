@@ -23,7 +23,7 @@ const DIST_EXCESS_FACTOR: f32 = 1.0;
 const DIST_DISJOINT_FACTOR: f32 = 1.0;
 const DIST_MATCHING_WEIGHT_FACTOR: f32 = 0.4;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     pub hidden_nodes: usize,
     // TODO: Make innovation number the index into a hash set instead of using

@@ -1,4 +1,4 @@
-use crate::genome::Genome;
+use crate::{environment::Environment, genome::Genome};
 
 #[derive(Default)]
 pub struct Organism<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
