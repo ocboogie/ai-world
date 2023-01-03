@@ -1,20 +1,24 @@
-use crate::genome::Genome;
-use crate::innovation_record::InnovationRecord;
+use std::iter::once;
+
+use crate::genome::{Genome, GenomeActivation};
+use crate::node::Node;
 use ::rand::Rng;
 use macroquad::prelude::*;
 
 const NODE_COLOR: Color = GREEN;
 const NODE_SIZE: f32 = 10.0;
-const TEXT_COLOR: Color = RED;
+const TEXT_COLOR: Color = YELLOW;
+const INDEX_TEXT_COLOR: Color = BLACK;
 const TEXT_SIZE: f32 = 20.0;
 const NODE_DIST: f32 = 50.0;
 const CONNECTION_THICKNESS: f32 = 5.0;
 const CONNECTION_COLOR: Color = RED;
 const SPAWN_SIZE: f32 = 100.0;
 const ATTRACTION_FORCE: f32 = 50.0;
-const REJECTION_FORCE: f32 = 1000000.0;
+const REJECTION_FORCE: f32 = 3000000.0;
 const DRAG_FORCE: f32 = 0.8;
 const MIN_DRAG_DIST: f32 = 50.0 * 50.0;
+const INPUT_OUTPUT_DIST: f32 = 300.0;
 
 #[derive(Debug)]
 struct NeuronVisualizer {
@@ -31,15 +35,24 @@ impl NeuronVisualizer {
         }
     }
 
-    fn draw(&self, index: usize) {
+    fn draw(&self, index: usize, activation: Option<f32>) {
         draw_circle(self.pos.x, self.pos.y, NODE_SIZE, NODE_COLOR);
         draw_text(
-            &index.to_string(),
-            self.pos.x - 4.5,
-            self.pos.y + 5.0,
+            &format!("{}", index),
+            self.pos.x - 5.0,
+            self.pos.y + 4.0,
             TEXT_SIZE,
-            TEXT_COLOR,
+            INDEX_TEXT_COLOR,
         );
+        if let Some(activation) = activation {
+            draw_text(
+                &format!("{:.2}", activation),
+                self.pos.x + NODE_SIZE,
+                self.pos.y - NODE_SIZE,
+                TEXT_SIZE,
+                TEXT_COLOR,
+            );
+        }
     }
 }
 
@@ -54,7 +67,43 @@ fn get_corrected_mouse_pos() -> Vec2 {
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeVisualizer<INPUT_SZ, OUTPUT_SZ> {
-    fn create_random(&mut self, rng: &mut impl Rng) {
+    pub fn new() -> Self {
+        let input_width = INPUT_SZ as f32 * NODE_DIST;
+        let output_width = OUTPUT_SZ as f32 * NODE_DIST;
+
+        let nodes = once(NeuronVisualizer {
+            pos: vec2(
+                -input_width / 2.0 - NODE_DIST * 1.5,
+                INPUT_OUTPUT_DIST / 2.0,
+            ),
+            vel: Vec2::ZERO,
+            fixed: true,
+        })
+        .chain((0..INPUT_SZ).into_iter().map(|i| NeuronVisualizer {
+            pos: vec2(
+                (input_width / INPUT_SZ as f32) * i as f32 - input_width / 2.0,
+                INPUT_OUTPUT_DIST / 2.0,
+            ),
+            vel: Vec2::ZERO,
+            fixed: true,
+        }))
+        .chain((0..OUTPUT_SZ).into_iter().map(|i| NeuronVisualizer {
+            pos: vec2(
+                (output_width / OUTPUT_SZ as f32) * i as f32 - output_width / 2.0,
+                -INPUT_OUTPUT_DIST / 2.0,
+            ),
+            vel: Vec2::ZERO,
+            fixed: true,
+        }))
+        .collect();
+
+        GenomeVisualizer {
+            nodes,
+            selected_node: None,
+        }
+    }
+
+    fn spawn_node(&mut self, rng: &mut impl Rng) {
         self.nodes.push(NeuronVisualizer {
             pos: vec2(
                 (rng.gen::<f32>()) * SPAWN_SIZE,
@@ -67,7 +116,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeVisualizer<INPUT_SZ, O
 
     pub fn update(&mut self, dt: f32, rng: &mut impl Rng, genome: &Genome<INPUT_SZ, OUTPUT_SZ>) {
         for _ in self.nodes.len()..genome.nodes() {
-            self.create_random(rng);
+            self.spawn_node(rng);
         }
 
         for connection in genome.connections.iter() {
@@ -137,10 +186,14 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeVisualizer<INPUT_SZ, O
         }
     }
 
-    pub fn draw(&self, genome: &Genome<INPUT_SZ, OUTPUT_SZ>) {
-        for node in genome.connections.iter() {
-            let in_pos = self.nodes[*node.in_node].pos;
-            let out_pos = self.nodes[*node.out_node].pos;
+    pub fn draw(
+        &self,
+        genome: &Genome<INPUT_SZ, OUTPUT_SZ>,
+        activation: Option<&GenomeActivation<INPUT_SZ, OUTPUT_SZ>>,
+    ) {
+        for connection in genome.connections.iter().filter(|c| c.enabled) {
+            let in_pos = self.nodes[*connection.in_node].pos;
+            let out_pos = self.nodes[*connection.out_node].pos;
 
             draw_line(
                 in_pos.x,
@@ -148,12 +201,17 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeVisualizer<INPUT_SZ, O
                 out_pos.x,
                 out_pos.y,
                 CONNECTION_THICKNESS,
-                CONNECTION_COLOR,
+                Color {
+                    r: CONNECTION_COLOR.r,
+                    g: CONNECTION_COLOR.g,
+                    b: CONNECTION_COLOR.b,
+                    a: connection.weight,
+                },
             );
         }
 
         for (i, node) in self.nodes.iter().enumerate().take(genome.nodes()) {
-            node.draw(i);
+            node.draw(i, activation.map(|activation| activation[Node(i)]));
         }
     }
 }

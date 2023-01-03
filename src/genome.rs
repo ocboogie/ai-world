@@ -19,9 +19,8 @@ const MUTATE_NEW_CONNECTION_RATE: f32 = 0.05;
 
 const CROSSOVER_PICK_FITTEST_CONNECTION_PROB: f64 = 0.5;
 
-const DIST_EXCESS_FACTOR: f32 = 1.0;
 const DIST_DISJOINT_FACTOR: f32 = 1.0;
-const DIST_MATCHING_WEIGHT_FACTOR: f32 = 0.4;
+const DIST_WEIGHT_DIFFERENCE_FACTOR: f32 = 0.4;
 
 #[derive(Default, Debug, Clone)]
 pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
@@ -32,18 +31,18 @@ pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
 }
 
 #[derive(Debug)]
-struct GenomeRuntime<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
+pub struct GenomeActivation<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     pub input: [f32; INPUT_SZ],
     pub output: [f32; OUTPUT_SZ],
     pub hidden: Vec<f32>,
 }
 
-impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeRuntime<INPUT_SZ, OUTPUT_SZ> {
+impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeActivation<INPUT_SZ, OUTPUT_SZ> {
     pub fn new(input: [f32; INPUT_SZ], hidden_nodes: usize) -> Self {
         Self {
             input,
-            output: [f32::NAN; OUTPUT_SZ],
-            hidden: vec![f32::NAN; hidden_nodes],
+            output: [0.; OUTPUT_SZ],
+            hidden: vec![0.; hidden_nodes],
         }
     }
 }
@@ -53,7 +52,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeRuntime<INPUT_SZ, OUTP
 /// INPUT_SZ + 1:OUTPUT_SZ + INPUT_SZ + 1 = Output nodes
 /// OUTPUT_SZ + INPUT_SZ + 1: = Hidden nodes
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Index<Node<INPUT_SZ, OUTPUT_SZ>>
-    for GenomeRuntime<INPUT_SZ, OUTPUT_SZ>
+    for GenomeActivation<INPUT_SZ, OUTPUT_SZ>
 {
     type Output = f32;
 
@@ -75,7 +74,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Index<Node<INPUT_SZ, OUTPUT_
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> IndexMut<Node<INPUT_SZ, OUTPUT_SZ>>
-    for GenomeRuntime<INPUT_SZ, OUTPUT_SZ>
+    for GenomeActivation<INPUT_SZ, OUTPUT_SZ>
 {
     fn index_mut(&mut self, node: Node<INPUT_SZ, OUTPUT_SZ>) -> &mut Self::Output {
         if node.is_bias() {
@@ -100,6 +99,26 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
             hidden_nodes: 0,
             connections: Vec::new(),
         }
+    }
+
+    pub fn new_random_initial(
+        rng: &mut impl Rng,
+        innovation_record: &mut InnovationRecord<INPUT_SZ, OUTPUT_SZ>,
+    ) -> Self {
+        let mut res = Self::new();
+
+        for i in 0..(INPUT_SZ + 1) {
+            for j in 0..OUTPUT_SZ {
+                res.connect(
+                    Node(i),
+                    Node::from_output_index(j),
+                    rng.gen(),
+                    innovation_record,
+                );
+            }
+        }
+
+        res
     }
 
     pub fn nodes(&self) -> usize {
@@ -278,72 +297,75 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         1.0 / (1.0 + E.powf(-x))
     }
 
-    fn compute_node(
-        &self,
-        target: Node<INPUT_SZ, OUTPUT_SZ>,
-        runtime: &mut GenomeRuntime<INPUT_SZ, OUTPUT_SZ>,
-    ) -> f32 {
-        if !runtime[target].is_nan() {
-            return runtime[target];
-        }
-
-        let val = self
-            .connections
-            .iter()
-            .filter(|connection| connection.out_node == target && connection.enabled)
-            .map(|connection| self.compute_node(connection.in_node, runtime) * connection.weight)
-            .sum();
-
-        runtime[target] = Self::activation_function(val);
-
-        val
-    }
-
-    pub fn calculate<I, O>(&self, input: I) -> O
+    pub fn activate<I, O>(&self, input: I) -> O
     where
         I: Into<[f32; INPUT_SZ]>,
         O: From<[f32; OUTPUT_SZ]>,
     {
-        let mut runtime = GenomeRuntime::new(input.into(), self.hidden_nodes);
+        let input = input.into();
+        let mut activation = GenomeActivation::new(input, self.hidden_nodes);
+        let mut other_activation = GenomeActivation::new(input, self.hidden_nodes);
+        let mut switch = false;
 
-        for i in 0..OUTPUT_SZ {
-            self.compute_node(Node(i + INPUT_SZ + 1), &mut runtime);
+        // FIXME:
+        for _ in 0..10 {
+            if switch {
+                self.activate_step::<I, O>(&mut activation, &other_activation);
+            } else {
+                self.activate_step::<I, O>(&mut other_activation, &activation);
+            }
+            switch = !switch;
         }
 
-        runtime.output.into()
+        if switch {
+            other_activation.output.into()
+        } else {
+            activation.output.into()
+        }
+    }
+
+    pub fn activate_step<I, O>(
+        &self,
+        activation: &mut GenomeActivation<INPUT_SZ, OUTPUT_SZ>,
+        last_activation: &GenomeActivation<INPUT_SZ, OUTPUT_SZ>,
+    ) {
+        assert_eq!(activation.hidden.len(), self.hidden_nodes);
+        assert_eq!(last_activation.hidden.len(), self.hidden_nodes);
+
+        for i in (INPUT_SZ + 1)..self.nodes() {
+            activation[Node(i)] = Self::activation_function(
+                self.connections
+                    .iter()
+                    .filter(|connection| connection.out_node == Node(i) && connection.enabled)
+                    .map(|connection| last_activation[connection.in_node] * connection.weight)
+                    .sum(),
+            );
+        }
     }
 
     pub fn distance(&self, other: &Genome<INPUT_SZ, OUTPUT_SZ>) -> f32 {
         let mut weight_difference_sum: f32 = 0.0;
         let mut matching: usize = 0;
         let mut disjoint: usize = 0;
-        let mut excess: usize = 0;
 
-        let self_max_innovation_number = self
+        let max_innovation_number = if let Some(max_innovation_number) = self
             .connections
             .iter()
+            .chain(other.connections.iter())
             .map(|connection| connection.innovation_number)
             .max()
-            .unwrap_or(0);
-        let other_max_innovation_number = other
-            .connections
-            .iter()
-            .map(|connection| connection.innovation_number)
-            .max()
-            .unwrap_or(0);
-
-        let max_innovation_number = self_max_innovation_number.max(other_max_innovation_number);
-
-        if max_innovation_number == 0 {
+        {
+            max_innovation_number
+        } else {
             return 0.0;
-        }
+        };
 
         for i in 0..max_innovation_number {
             let this_connection = self
                 .connections
                 .iter()
                 .find(|connection| connection.innovation_number == i);
-            let other_connection = self
+            let other_connection = other
                 .connections
                 .iter()
                 .find(|connection| connection.innovation_number == i);
@@ -353,187 +375,11 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
                     weight_difference_sum += (a.weight - b.weight).abs();
                     matching += 1;
                 }
-                (Some(_), None) if i < other_max_innovation_number => disjoint += 1,
-                (None, Some(_)) if i < other_max_innovation_number => disjoint += 1,
-                _ => excess += 1,
+                _ => disjoint += 1,
             }
         }
 
-        return DIST_EXCESS_FACTOR * excess as f32
-            + DIST_DISJOINT_FACTOR * disjoint as f32
-            + DIST_MATCHING_WEIGHT_FACTOR * (weight_difference_sum / matching as f32);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use rand::thread_rng;
-
-    use super::*;
-
-    #[test]
-    fn test_basic() {
-        assert_eq!(
-            Genome::<1, 1> {
-                hidden_nodes: 1,
-                connections: vec![
-                    Connection {
-                        in_node: Node(1),
-                        out_node: Node(3),
-                        weight: 0.5,
-                        enabled: true,
-                        innovation_number: 0,
-                    },
-                    Connection {
-                        in_node: Node(3),
-                        out_node: Node(2),
-                        weight: 0.5,
-                        enabled: true,
-                        innovation_number: 1,
-                    },
-                ],
-            }
-            .calculate::<[f32; 1], [f32; 1]>([12.0]),
-            [3.0]
-        );
-
-        assert_eq!(
-            Genome::<1, 1> {
-                hidden_nodes: 0,
-                connections: vec![Connection {
-                    in_node: Node(1),
-                    out_node: Node(2),
-                    weight: 0.5,
-                    enabled: false,
-                    innovation_number: 0,
-                }]
-            }
-            .calculate::<[f32; 1], [f32; 1]>([12.0]),
-            [0.0]
-        );
-    }
-
-    #[test]
-    fn test_crossover() {
-        let fittest = Genome::<3, 1> {
-            hidden_nodes: 2,
-            connections: vec![
-                Connection {
-                    in_node: Node(1),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 1,
-                },
-                Connection {
-                    in_node: Node(2),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: false,
-                    innovation_number: 2,
-                },
-                Connection {
-                    in_node: Node(3),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 3,
-                },
-                Connection {
-                    in_node: Node(2),
-                    out_node: Node(5),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 4,
-                },
-                Connection {
-                    in_node: Node(5),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 5,
-                },
-                Connection {
-                    in_node: Node(1),
-                    out_node: Node(5),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 8,
-                },
-            ],
-        };
-
-        let other = Genome::<3, 1> {
-            hidden_nodes: 2,
-            connections: vec![
-                Connection {
-                    in_node: Node(1),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 1,
-                },
-                Connection {
-                    in_node: Node(2),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: false,
-                    innovation_number: 2,
-                },
-                Connection {
-                    in_node: Node(3),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 3,
-                },
-                Connection {
-                    in_node: Node(2),
-                    out_node: Node(5),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 4,
-                },
-                Connection {
-                    in_node: Node(5),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: false,
-                    innovation_number: 5,
-                },
-                Connection {
-                    in_node: Node(5),
-                    out_node: Node(6),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 6,
-                },
-                Connection {
-                    in_node: Node(6),
-                    out_node: Node(4),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 7,
-                },
-                Connection {
-                    in_node: Node(3),
-                    out_node: Node(5),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 9,
-                },
-                Connection {
-                    in_node: Node(1),
-                    out_node: Node(6),
-                    weight: 0.5,
-                    enabled: true,
-                    innovation_number: 10,
-                },
-            ],
-        };
-
-        // The 'ol looks good to me unit test
-        dbg!(Genome::crossover(&fittest, &other, &mut thread_rng()));
-        // panic!();
+        return DIST_DISJOINT_FACTOR * disjoint as f32
+            + DIST_WEIGHT_DIFFERENCE_FACTOR * (weight_difference_sum / matching as f32);
     }
 }

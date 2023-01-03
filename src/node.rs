@@ -17,6 +17,20 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> DerefMut for Node<INPUT_SZ, 
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Node<INPUT_SZ, OUTPUT_SZ> {
+    pub const BIAS: Node<INPUT_SZ, OUTPUT_SZ> = Node(0);
+
+    pub fn from_input_index(index: usize) -> Self {
+        Node(index + 1)
+    }
+
+    pub fn from_output_index(index: usize) -> Self {
+        Node(index + 1 + INPUT_SZ)
+    }
+
+    pub fn from_hidden_index(index: usize) -> Self {
+        Node(index + 1 + INPUT_SZ + OUTPUT_SZ)
+    }
+
     pub fn is_bias(&self) -> bool {
         self.0 == 0
     }
