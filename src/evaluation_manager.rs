@@ -1,10 +1,15 @@
 use crate::{
-    environment::Environment, evaluator::Evaluator, genome::GenomeActivation,
-    genome_visualizer::GenomeVisualizer, innovation_record::InnovationRecord,
-    population::Population,
+    client::ClientId, environment::Environment, evaluation::Evaluation, evaluator::Evaluator,
+    population::Population, population_manager::PopulationManager, speciation::Speciation,
 };
-use ::rand::rngs::ThreadRng;
-use macroquad::prelude::*;
+
+use eframe::egui;
+
+struct Generation<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
+    population: Population<INPUT_SZ, OUTPUT_SZ>,
+    speciation: Speciation<INPUT_SZ, OUTPUT_SZ>,
+    evaluation: Evaluation,
+}
 
 pub struct EvaluationManager<
     const INPUT_SZ: usize,
@@ -12,11 +17,9 @@ pub struct EvaluationManager<
     E: Environment<INPUT_SZ, OUTPUT_SZ>,
 > {
     evaluator: Evaluator<INPUT_SZ, OUTPUT_SZ, E>,
-    genome_visualizer: GenomeVisualizer<INPUT_SZ, OUTPUT_SZ>,
-    selected_organism: usize,
-    selected_species: usize,
-    selected_genome_activation: Option<GenomeActivation<INPUT_SZ, OUTPUT_SZ>>,
-    input: [f32; INPUT_SZ],
+    population_manager: PopulationManager<INPUT_SZ, OUTPUT_SZ>,
+    history: Vec<Generation<INPUT_SZ, OUTPUT_SZ>>,
+    selected_generation: usize,
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize, E: Environment<INPUT_SZ, OUTPUT_SZ>>
@@ -25,135 +28,64 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize, E: Environment<INPUT_SZ, OUT
     pub fn new(evaluator: Evaluator<INPUT_SZ, OUTPUT_SZ, E>) -> Self {
         Self {
             evaluator,
-            genome_visualizer: GenomeVisualizer::new(),
-            selected_organism: 0,
-            selected_species: 0,
-            selected_genome_activation: None,
-            input: [0.0; INPUT_SZ],
+            population_manager: PopulationManager::default(),
+            history: Vec::new(),
+            selected_generation: 0,
         }
-    }
-
-    pub fn activate_selected(&mut self) {
-        let organism = &mut self.evaluator.population.species[self.selected_species].members
-            [self.selected_organism];
-
-        let mut new_activation = GenomeActivation::new(self.input, organism.genome.hidden_nodes);
-
-        let last_activation = self
-            .selected_genome_activation
-            .take()
-            .unwrap_or_else(|| GenomeActivation::new(self.input, organism.genome.hidden_nodes));
-
-        organism
-            .genome
-            .activate_step::<[f32; INPUT_SZ], [f32; OUTPUT_SZ]>(
-                &mut new_activation,
-                &last_activation,
-            );
-
-        self.selected_genome_activation = Some(new_activation);
     }
 
     pub fn evaluate_and_evolve(&mut self) {
         self.evaluator.evaluate_and_evolve();
+        self.history.push(Generation {
+            population: self.evaluator.population.clone(),
+            speciation: self.evaluator.last_speciation.clone().unwrap(),
+            evaluation: self.evaluator.last_evaluation.clone().unwrap(),
+        });
     }
 
-    pub fn update(&mut self) {
-        let dt = get_frame_time();
-
-        let organism = &self.evaluator.population.species[self.selected_species].members
-            [self.selected_organism];
-
-        self.genome_visualizer
-            .update(dt, &mut self.evaluator.rng, &organism.genome);
-        self.genome_visualizer
-            .draw(&organism.genome, self.selected_genome_activation.as_ref());
-
-        set_camera(&Camera2D::from_display_rect(Rect {
-            x: -screen_width() / 2.,
-            y: -screen_height() / 2.,
-            w: screen_width(),
-            h: screen_height(),
-        }));
-
-        egui_macroquad::ui(|egui_ctx| {
-            egui::Window::new("egui ❤ macroquad").show(egui_ctx, |ui| {
-                ui.vertical(|ui| {
-                    if ui.button("Evolve").clicked() {
-                        self.selected_genome_activation = None;
-                        self.evaluate_and_evolve();
-                    }
-
-                    ui.label(format!(
-                        "Generation: {}",
-                        self.evaluator.population.generation
-                    ));
-                    ui.label(format!(
-                        "Species: {}",
-                        self.evaluator.population.species.len()
-                    ));
-                    ui.label(format!("Size: {}", self.evaluator.population.size()));
-
-                    ui.add(
-                        egui::Slider::new(
-                            &mut self.selected_species,
-                            0..=self.evaluator.population.species.len() - 1,
-                        )
-                        .clamp_to_range(true),
-                    );
-
-                    if let Some(selected_species) =
-                        self.evaluator.population.species.get(self.selected_species)
-                    {
-                        ui.label(format!("Age: {}", selected_species.age));
-                        ui.label(format!(
-                            "Average fitness: {}",
-                            selected_species.average_fitness
-                        ));
-                        ui.label(format!(
-                            "Champion fitness: {}",
-                            selected_species.champion.fitness
-                        ));
-                        ui.label(format!(
-                            "Number of members: {}",
-                            selected_species.members.len()
-                        ));
-
-                        if ui
-                            .add(
-                                egui::Slider::new(
-                                    &mut self.selected_organism,
-                                    0..=selected_species.members.len() - 1,
-                                )
-                                .clamp_to_range(true),
-                            )
-                            .changed()
-                        {
-                            // dbg!(selected_species.members.get(self.selected_organism));
-                        }
-
-                        if let Some(selected_organism) =
-                            selected_species.members.get(self.selected_organism)
-                        {
-                            ui.label(format!("Fitness: {}", selected_organism.fitness));
-                            ui.label(format!("Nodes: {}", selected_organism.genome.nodes()));
-                            ui.label(format!(
-                                "Connections: {}",
-                                selected_organism.genome.connections.len()
-                            ));
-
-                            ui.label("Input values");
-                            for i in 0..INPUT_SZ {
-                                ui.add(egui::Slider::new(&mut self.input[i], 0.0..=1.0));
-                            }
-
-                            if ui.button("Activate").clicked() {
-                                self.activate_selected();
-                            }
-                        }
+    pub fn show(&mut self, ctx: &egui::Context) {
+        if self.history.is_empty() {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.centered_and_justified(|ui| {
+                    if ui.button("Start").clicked() {
+                        self.evaluate_and_evolve()
                     }
                 });
             });
+            return;
+        }
+
+        egui::TopBottomPanel::top("top").show(ctx, |ui| {
+            ui.horizontal_centered(|ui| {
+                if ui.button("<").clicked() {
+                    self.selected_generation = self.selected_generation.saturating_sub(1);
+                }
+                ui.label(format!(
+                    "{}/{}",
+                    self.selected_generation + 1,
+                    self.history.len()
+                ));
+                if ui.button(">").clicked() {
+                    self.selected_generation += 1;
+                    while self.selected_generation >= self.history.len() {
+                        self.evaluate_and_evolve();
+                    }
+                }
+            });
         });
+
+        self.selected_generation = self
+            .selected_generation
+            .clamp(0, self.history.len().saturating_sub(1));
+
+        if let Some(Generation {
+            population,
+            speciation,
+            evaluation,
+        }) = self.history.get_mut(self.selected_generation)
+        {
+            self.population_manager
+                .show(ctx, population, speciation, evaluation);
+        }
     }
 }

@@ -1,7 +1,10 @@
+use std::mem::swap;
+
 use rand::{rngs::ThreadRng, thread_rng};
 
 use crate::{
-    environment::Environment, innovation_record::InnovationRecord, population::Population,
+    environment::Environment, evaluation::Evaluation, innovation_record::InnovationRecord,
+    population::Population, speciation::Speciation,
 };
 
 pub struct Evaluator<
@@ -13,6 +16,8 @@ pub struct Evaluator<
     pub innovation_record: InnovationRecord<INPUT_SZ, OUTPUT_SZ>,
     pub population: Population<INPUT_SZ, OUTPUT_SZ>,
     pub rng: ThreadRng,
+    pub last_speciation: Option<Speciation<INPUT_SZ, OUTPUT_SZ>>,
+    pub last_evaluation: Option<Evaluation>,
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize, E: Environment<INPUT_SZ, OUTPUT_SZ>>
@@ -27,17 +32,28 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize, E: Environment<INPUT_SZ, OUT
             env,
             innovation_record,
             rng,
+            last_speciation: None,
+            last_evaluation: None,
         }
     }
 
     pub fn evaluate_and_evolve(&mut self) {
-        if self.population.generation != 0 {
-            self.population
-                .evolve(&mut self.rng, &mut self.innovation_record);
+        if let (Some(speciation), Some(evaluation)) =
+            (&mut self.last_speciation, &mut self.last_evaluation)
+        {
+            self.population.evolve(
+                evaluation,
+                speciation,
+                &mut self.rng,
+                &mut self.innovation_record,
+            );
         }
 
-        self.population.speciate(&mut self.rng);
+        self.last_speciation = Some(
+            self.population
+                .speciate(&mut self.rng, self.last_speciation.as_ref()),
+        );
 
-        self.population.evaluate(&mut self.env);
+        self.last_evaluation = Some(self.population.evaluate(&mut self.env));
     }
 }

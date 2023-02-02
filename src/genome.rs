@@ -5,24 +5,29 @@ use crate::{
 };
 use rand::seq::SliceRandom;
 use rand::Rng;
+use rand_distr::{Distribution, Normal, StandardNormal};
 use std::{
     collections::HashSet,
-    ops::{Index, IndexMut},
+    ops::{Index, IndexMut, RangeInclusive},
 };
 
 const BIAS: f32 = 1.0;
 
-const MUTATE_WEIGHTS_RATE: f32 = 0.80;
-const MUTATE_PERTURB_WEIGHT_RATE: f32 = 0.90;
-const MUTATE_NEW_NODE_RATE: f32 = 0.03;
-const MUTATE_NEW_CONNECTION_RATE: f32 = 0.05;
+const INTIAL_WEIGHT_RANGE: RangeInclusive<f32> = -1.0..=1.0;
 
-const CROSSOVER_PICK_FITTEST_CONNECTION_PROB: f64 = 0.5;
+const MUTATE_WEIGHTS_RATE: f64 = 0.90;
+const MUTATE_PERTURB_WEIGHT_RATE: f64 = 0.90;
+const MUTATE_WEIGHT_POWER: f32 = 0.5;
+const MUTATE_REPLACE_RANGE: RangeInclusive<f32> = -30.0..=30.0;
+const MUTATE_NEW_NODE_RATE: f64 = 0.2;
+const MUTATE_NEW_CONNECTION_RATE: f64 = 0.5;
+
+const CROSSOVER_PICK_FITTEST_CONNECTION_PROB: f64 = 0.9;
 
 const DIST_DISJOINT_FACTOR: f32 = 1.0;
-const DIST_WEIGHT_DIFFERENCE_FACTOR: f32 = 0.4;
+const DIST_WEIGHT_DIFFERENCE_FACTOR: f32 = 0.5;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     pub hidden_nodes: usize,
     // TODO: Make innovation number the index into a hash set instead of using
@@ -112,7 +117,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
                 res.connect(
                     Node(i),
                     Node::from_output_index(j),
-                    rng.gen(),
+                    rng.gen_range(INTIAL_WEIGHT_RANGE),
                     innovation_record,
                 );
             }
@@ -196,10 +201,13 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
 
     fn mutate_weights(&mut self, rng: &mut impl Rng) {
         for mut connection in self.connections.iter_mut() {
-            if rng.gen::<f32>() < MUTATE_PERTURB_WEIGHT_RATE {
-                connection.weight += rng.gen::<f32>() - 0.5;
+            connection.weight = if rng.gen_bool(MUTATE_PERTURB_WEIGHT_RATE) {
+                let normal = Normal::new(0.0, MUTATE_WEIGHT_POWER).unwrap();
+
+                connection.weight + normal.sample(rng)
             } else {
-                connection.weight = rng.gen();
+                rng.sample::<f32, _>(StandardNormal)
+                    .clamp(*MUTATE_REPLACE_RANGE.start(), *MUTATE_REPLACE_RANGE.end())
             }
         }
     }
@@ -276,20 +284,30 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         }
     }
 
+    fn mutate_remove_connection(&mut self, rng: &mut impl Rng) {
+        if self.connections.is_empty() {
+            return;
+        }
+
+        self.connections
+            .remove(rng.gen_range(0..self.connections.len()));
+    }
+
     pub fn mutate(
         &mut self,
         rng: &mut impl Rng,
         innovation_record: &mut InnovationRecord<INPUT_SZ, OUTPUT_SZ>,
     ) {
-        if rng.gen::<f32>() < MUTATE_WEIGHTS_RATE {
+        if rng.gen_bool(MUTATE_WEIGHTS_RATE) {
             self.mutate_weights(rng);
         }
-        if rng.gen::<f32>() < MUTATE_NEW_CONNECTION_RATE {
+        if rng.gen_bool(MUTATE_NEW_CONNECTION_RATE) {
             self.mutate_new_connection(rng, innovation_record);
         }
-        if rng.gen::<f32>() < MUTATE_NEW_NODE_RATE {
+        if rng.gen_bool(MUTATE_NEW_NODE_RATE) {
             self.mutate_new_node(rng, innovation_record);
         }
+        // TODO: Remove nodes, delete connections
     }
 
     fn activation_function(x: f32) -> f32 {
@@ -360,7 +378,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
             return 0.0;
         };
 
-        for i in 0..max_innovation_number {
+        for i in 0..(max_innovation_number + 1) {
             let this_connection = self
                 .connections
                 .iter()
@@ -371,15 +389,115 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
                 .find(|connection| connection.innovation_number == i);
 
             match (this_connection, other_connection) {
-                (Some(a), Some(b)) => {
-                    weight_difference_sum += (a.weight - b.weight).abs();
+                (Some(this_conn), Some(other_conn)) => {
+                    if this_conn.enabled != other_conn.enabled {
+                        weight_difference_sum += 1.0;
+                    } else {
+                        weight_difference_sum += (this_conn.weight - other_conn.weight).abs();
+                    }
                     matching += 1;
                 }
+                (None, None) => {}
                 _ => disjoint += 1,
             }
         }
 
+        if matching == 0 {
+            return DIST_DISJOINT_FACTOR * disjoint as f32;
+        }
+
         return DIST_DISJOINT_FACTOR * disjoint as f32
             + DIST_WEIGHT_DIFFERENCE_FACTOR * (weight_difference_sum / matching as f32);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_distance() {
+        dbg!(Genome::<2, 1> {
+            hidden_nodes: 1,
+            connections: vec![
+                Connection {
+                    in_node: Node(0,),
+                    out_node: Node(3,),
+                    weight: -0.84480023,
+                    enabled: false,
+                    innovation_number: 0,
+                },
+                Connection {
+                    in_node: Node(1,),
+                    out_node: Node(3,),
+                    weight: 3.6848402,
+                    enabled: true,
+                    innovation_number: 1,
+                },
+                Connection {
+                    in_node: Node(2,),
+                    out_node: Node(3,),
+                    weight: 4.579851,
+                    enabled: true,
+                    innovation_number: 2,
+                },
+                Connection {
+                    in_node: Node(0,),
+                    out_node: Node(4,),
+                    weight: 1.0,
+                    enabled: true,
+                    innovation_number: 10,
+                },
+                Connection {
+                    in_node: Node(4,),
+                    out_node: Node(3,),
+                    weight: -0.84480023,
+                    enabled: true,
+                    innovation_number: 4,
+                },
+            ],
+        }
+        .distance(&Genome {
+            hidden_nodes: 1,
+            connections: vec![
+                Connection {
+                    in_node: Node(0,),
+                    out_node: Node(3,),
+                    weight: -0.84480023,
+                    enabled: false,
+                    innovation_number: 0,
+                },
+                Connection {
+                    in_node: Node(1,),
+                    out_node: Node(3,),
+                    weight: 3.6848402,
+                    enabled: true,
+                    innovation_number: 1,
+                },
+                Connection {
+                    in_node: Node(2,),
+                    out_node: Node(3,),
+                    weight: 4.579851,
+                    enabled: true,
+                    innovation_number: 2,
+                },
+                Connection {
+                    in_node: Node(0,),
+                    out_node: Node(4,),
+                    weight: 1.0,
+                    enabled: true,
+                    innovation_number: 10,
+                },
+                Connection {
+                    in_node: Node(4,),
+                    out_node: Node(3,),
+                    weight: -0.84480023,
+                    enabled: true,
+                    innovation_number: 4,
+                },
+            ],
+        }));
+
+        panic!();
     }
 }

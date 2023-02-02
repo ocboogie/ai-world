@@ -6,8 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-egui = "0.19"
-egui-macroquad = "0.12"
-macroquad = "0.3"
+eframe = "0.20"
+egui_extras = "0.20.0"
 rand = "0.8.5"
+rand_distr = "0.4.3"
+tracing-subscriber = "0.3.16"
 
