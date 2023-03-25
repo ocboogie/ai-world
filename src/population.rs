@@ -39,7 +39,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
         Evaluation {
             fitness: self
                 .members
-                .iter()
+                .iter_mut()
                 .map(|member| env.evaluate(member))
                 .enumerate()
                 .collect(),

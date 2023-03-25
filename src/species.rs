@@ -1,6 +1,6 @@
 use crate::{client::ClientId, evaluation::Evaluation, genome::Genome};
 
-const COMPATIBILITY_THRESHOLD: f32 = 3.0;
+const COMPATIBILITY_THRESHOLD: f32 = 6.0;
 
 pub type SpeciesId = usize;
 

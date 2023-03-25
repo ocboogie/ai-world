@@ -13,6 +13,7 @@ use crate::{
 use eframe::{
     egui,
     epaint::{vec2, Vec2},
+    Frame,
 };
 use egui_extras::{Column, TableBuilder};
 
@@ -75,7 +76,8 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
                                     let champion = evaluation.species_champion(species).0;
                                     let genome = population.members[champion].clone();
 
-                                    self.genomes_open.push(GenomeVisualizer::new(dbg!(genome)));
+                                    self.genomes_open
+                                        .push(GenomeVisualizer::new(dbg!(genome), champion));
                                 }
                             });
                             row.col(|ui| {
@@ -120,10 +122,12 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
             self.fd_graph.show(ui, &pop_graph, |client_id| {
                 let genome = population.members[client_id].clone();
 
-                self.genomes_open.push(GenomeVisualizer::new(genome));
+                self.genomes_open
+                    .push(GenomeVisualizer::new(genome, client_id));
             });
         });
 
+        // FIXME
         let mut hack = 0;
 
         self.genomes_open

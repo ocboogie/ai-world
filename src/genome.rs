@@ -23,9 +23,10 @@ const MUTATE_NEW_NODE_RATE: f64 = 0.2;
 const MUTATE_NEW_CONNECTION_RATE: f64 = 0.5;
 
 const CROSSOVER_PICK_FITTEST_CONNECTION_PROB: f64 = 0.9;
+const CROSSOVER_DISABLE_CONNECTION_PROB: f64 = 0.75;
 
 const DIST_DISJOINT_FACTOR: f32 = 1.0;
-const DIST_WEIGHT_DIFFERENCE_FACTOR: f32 = 0.5;
+const DIST_WEIGHT_DIFFERENCE_FACTOR: f32 = 2.0;
 
 #[derive(Debug, Clone)]
 pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
@@ -33,9 +34,10 @@ pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     // TODO: Make innovation number the index into a hash set instead of using
     // an vector
     pub connections: Vec<Connection<INPUT_SZ, OUTPUT_SZ>>,
+    pub activation: Option<GenomeActivation<INPUT_SZ, OUTPUT_SZ>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GenomeActivation<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     pub input: [f32; INPUT_SZ],
     pub output: [f32; OUTPUT_SZ],
@@ -103,6 +105,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         Self {
             hidden_nodes: 0,
             connections: Vec::new(),
+            activation: None,
         }
     }
 
@@ -196,6 +199,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         Genome {
             hidden_nodes: hidden_nodes.len(),
             connections,
+            activation: None,
         }
     }
 
@@ -311,11 +315,10 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
     }
 
     fn activation_function(x: f32) -> f32 {
-        use std::f32::consts::E;
-        1.0 / (1.0 + E.powf(-x))
+        1.0 / (1.0 + f32::exp(-x))
     }
 
-    pub fn activate<I, O>(&self, input: I) -> O
+    pub fn activate<I, O>(&mut self, input: I) -> O
     where
         I: Into<[f32; INPUT_SZ]>,
         O: From<[f32; OUTPUT_SZ]>,
@@ -326,7 +329,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         let mut switch = false;
 
         // FIXME:
-        for _ in 0..10 {
+        for _ in 0..20 {
             if switch {
                 self.activate_step::<I, O>(&mut activation, &other_activation);
             } else {
@@ -336,9 +339,13 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         }
 
         if switch {
-            other_activation.output.into()
+            let tmp = other_activation.output.into();
+            self.activation = Some(other_activation);
+            tmp
         } else {
-            activation.output.into()
+            let tmp = activation.output.into();
+            self.activation = Some(activation);
+            tmp
         }
     }
 
@@ -378,7 +385,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
             return 0.0;
         };
 
-        for i in 0..(max_innovation_number + 1) {
+        for i in 0..=(max_innovation_number) {
             let this_connection = self
                 .connections
                 .iter()
@@ -418,6 +425,7 @@ mod tests {
     #[test]
     fn test_distance() {
         dbg!(Genome::<2, 1> {
+            activation: None,
             hidden_nodes: 1,
             connections: vec![
                 Connection {
@@ -455,10 +463,18 @@ mod tests {
                     enabled: true,
                     innovation_number: 4,
                 },
+                Connection {
+                    in_node: Node(4,),
+                    out_node: Node(3,),
+                    weight: -0.84480023,
+                    enabled: true,
+                    innovation_number: 11,
+                },
             ],
         }
         .distance(&Genome {
             hidden_nodes: 1,
+            activation: None,
             connections: vec![
                 Connection {
                     in_node: Node(0,),

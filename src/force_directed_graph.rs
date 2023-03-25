@@ -3,19 +3,25 @@ use rand::random;
 
 use crate::node::Node;
 
-const NODE_SIZE: f32 = 5.0;
-const NODE_DIST: f32 = 20.0;
-const SPAWN_SIZE: f32 = 100.0;
-const STAY_LENIENCE: f32 = 25.0;
-const STAY_FORCE: f32 = 85.0;
-const ATTRACTION_FORCE: f32 = 3.0;
-const REJECTION_FORCE: f32 = 580000.0;
-const DRAG_FORCE: f32 = 0.8;
-const MAX_SPEED: f32 = 500.0;
+const METERS2PIXELS: f32 = 7.0;
+const PIXELS2METERS: f32 = 1.0 / METERS2PIXELS;
+const NODE_SIZE: f32 = 1.0;
+const SPAWN_SIZE: f32 = 5.0;
+const IDEAL_DIST: f32 = NODE_SIZE * 2.0;
+const GRAVITY: f32 = 9.8;
+const ATTRACTION_FORCE: f32 = 0.5;
+const REPLUSION_FORCE: f32 = 125.0;
+const MASS: f32 = 0.125;
+const FRICTION: f32 = 0.8;
+const MAX_FORCE: f32 = 100.0;
+const MAX_SPEED: f32 = 50.0;
+
+const NODE_INTERACTION_SIZE: f32 = NODE_SIZE * 2.0;
 
 #[derive(Debug, Default)]
 pub struct NodeEntity {
     pub pos: Pos2,
+    pub force: Vec2,
     pub vel: Vec2,
     pub fixed: bool,
 }
@@ -36,12 +42,19 @@ impl NodeEntity {
             return;
         }
 
+        self.force = self
+            .force
+            .clamp(vec2(-MAX_FORCE, -MAX_FORCE), vec2(MAX_FORCE, MAX_FORCE));
+
+        self.vel += (self.force / MASS) * dt;
+        self.vel *= FRICTION;
         self.vel = self
             .vel
-            .clamp(Vec2::splat(-MAX_SPEED), Vec2::splat(MAX_SPEED));
+            .clamp(vec2(-MAX_SPEED, -MAX_SPEED), vec2(MAX_SPEED, MAX_SPEED));
 
         self.pos += self.vel * dt;
-        self.vel *= DRAG_FORCE * dt;
+
+        self.force = Vec2::ZERO;
     }
 }
 
@@ -59,6 +72,10 @@ pub trait Graph<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
         _node_1: Node<INPUT_SZ, OUTPUT_SZ>,
         _node_2: Node<INPUT_SZ, OUTPUT_SZ>,
     ) -> Option<String> {
+        None
+    }
+
+    fn node_text(&self, _node: Node<INPUT_SZ, OUTPUT_SZ>) -> Option<String> {
         None
     }
 }
@@ -106,40 +123,50 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> FDGraph<INPUT_SZ, OUTPUT_SZ>
                 if dist == 0.0 {
                     continue;
                 }
-                let rejection_force =
-                    (other_pos - this.pos).normalized() * (REJECTION_FORCE / (dist * dist)) * dt;
+                let mut force = 0.0;
 
-                this.vel -= rejection_force;
+                force -= REPLUSION_FORCE / (dist * dist);
 
                 if graph.connected(Node(i), Node(j)) {
-                    let ideal_dist = dist - NODE_DIST;
-                    let attraction_force =
-                        (other_pos - this.pos).normalized() * ATTRACTION_FORCE * ideal_dist * dt;
+                    let ideal_dist = dist - IDEAL_DIST;
 
-                    this.vel += attraction_force;
+                    force += ATTRACTION_FORCE * ideal_dist;
                 }
+
+                this.force += (other_pos - this.pos).normalized() * force;
             }
         }
 
-        let space_size = space.size();
+        // dbg!(self.entities.first());
 
+        // let space_size = space.size();
         for entity in &mut self.entities {
-            let target_dist = space_size.x.min(space_size.y) / 2.0 - STAY_LENIENCE;
-            let dist = entity.pos.distance(Pos2::ZERO);
-
-            if target_dist < dist {
-                let dist_to_target_dist = dist - target_dist;
-
-                let stay_force = (Pos2::ZERO - entity.pos).normalized()
-                    * STAY_FORCE
-                    * dist_to_target_dist.max(1.0)
-                    * dt;
-
-                entity.vel += stay_force;
-            }
+            entity.force += (Pos2::ZERO - entity.pos).normalized() * GRAVITY;
 
             entity.update(dt);
+
+            entity.pos = space.clamp(entity.pos);
         }
+
+        // let space_size = space.size();
+
+        // for entity in &mut self.entities {
+        //     let target_dist = space_size.x.min(space_size.y) / 2.0 - STAY_LENIENCE;
+        //     let dist = entity.pos.distance(Pos2::ZERO);
+        //
+        //     if target_dist < dist {
+        //         let dist_to_target_dist = dist - target_dist;
+        //
+        //         let stay_force = (Pos2::ZERO - entity.pos).normalized()
+        //             * STAY_FORCE
+        //             * dist_to_target_dist.max(1.0)
+        //             * dt;
+        //
+        //         entity.vel += stay_force;
+        //     }
+        //
+        //     entity.update(dt);
+        // }
     }
 
     pub fn show(
@@ -150,14 +177,14 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> FDGraph<INPUT_SZ, OUTPUT_SZ>
     ) -> Response {
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::drag());
 
-        let mut space = painter.clip_rect();
-        space.set_center(Pos2::ZERO);
-        let to_screen = emath::RectTransform::from_to(space, painter.clip_rect());
-        let from_screen = emath::RectTransform::from_to(painter.clip_rect(), space);
+        let clip_rect = painter.clip_rect();
+        let world_space = Rect::from_center_size(Pos2::ZERO, clip_rect.size() * PIXELS2METERS);
+        let to_screen = emath::RectTransform::from_to(world_space, painter.clip_rect());
+        let from_screen = emath::RectTransform::from_to(painter.clip_rect(), world_space);
 
         let dt = ui.input().stable_dt;
         ui.ctx().request_repaint();
-        self.update(dt as f32, graph, space);
+        self.update(dt as f32, graph, world_space);
 
         if self.draw_lines {
             for i in 0..graph.size() {
@@ -191,8 +218,10 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> FDGraph<INPUT_SZ, OUTPUT_SZ>
         }
 
         for (i, entity) in self.entities.iter_mut().enumerate() {
-            let point_rect =
-                Rect::from_center_size(to_screen * entity.pos, Vec2::splat(NODE_SIZE * 1.5));
+            let point_rect = Rect::from_center_size(
+                to_screen * entity.pos,
+                Vec2::splat(NODE_INTERACTION_SIZE * METERS2PIXELS),
+            );
             let point_id = response.id.with(i);
             let point_response = ui.interact(point_rect, point_id, Sense::click_and_drag());
 
@@ -206,9 +235,23 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> FDGraph<INPUT_SZ, OUTPUT_SZ>
                 }
             }
 
-            let fill = ui.style().interact(&point_response).bg_fill;
+            let style = ui.style().interact(&point_response);
 
-            painter.circle_filled(to_screen * entity.pos, NODE_SIZE, fill);
+            let fill = style.bg_fill;
+
+            painter.circle_filled(to_screen * entity.pos, NODE_SIZE * METERS2PIXELS, fill);
+
+            if let Some(text) = graph.node_text(Node(i)) {
+                let font = TextStyle::Small.resolve(ui.style());
+
+                painter.text(
+                    to_screen * pos2(entity.pos.x + 1.0, entity.pos.y),
+                    Align2::LEFT_CENTER,
+                    " ".to_string() + &text,
+                    font,
+                    style.text_color(),
+                );
+            }
         }
 
         response

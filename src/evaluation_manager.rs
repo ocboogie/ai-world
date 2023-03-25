@@ -1,6 +1,7 @@
 use crate::{
     client::ClientId, environment::Environment, evaluation::Evaluation, evaluator::Evaluator,
-    population::Population, population_manager::PopulationManager, speciation::Speciation,
+    genome::GenomeActivation, population::Population, population_manager::PopulationManager,
+    speciation::Speciation,
 };
 
 use eframe::egui;
