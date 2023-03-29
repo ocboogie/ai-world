@@ -9,7 +9,7 @@ use crate::{
 use eframe::{egui, epaint::Vec2};
 use egui_extras::{Column, TableBuilder};
 
-const GENOME_WINDOW_SIZE: f32 = 200.0;
+const GENOME_WINDOW_SIZE: f32 = 350.0;
 
 #[derive(Default)]
 pub struct PopulationManager<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {

@@ -2,12 +2,14 @@ use crate::client::ClientId;
 use crate::force_directed_graph::{FDGraph, Graph, NodeEntity};
 use crate::genome::{Genome, GenomeActivation};
 use crate::node::Node;
+use eframe::egui::style::Margin;
+use eframe::egui::Frame;
 use eframe::egui::{CentralPanel, TopBottomPanel};
 use eframe::{egui, epaint::pos2};
 use rand::{thread_rng, Rng};
 
-const INPUT_OUTPUT_DIST: f32 = 30.0;
-const ADJACENT_NODE_DIST: f32 = 15.0;
+const INPUT_OUTPUT_DIST: f32 = 35.0;
+const ADJACENT_NODE_DIST: f32 = 10.0;
 
 pub struct GenomeVisualizer<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     client_id: ClientId,
