@@ -34,7 +34,6 @@ pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     // TODO: Make innovation number the index into a hash set instead of using
     // an vector
     pub connections: Vec<Connection<INPUT_SZ, OUTPUT_SZ>>,
-    pub activation: Option<GenomeActivation<INPUT_SZ, OUTPUT_SZ>>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +104,6 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         Self {
             hidden_nodes: 0,
             connections: Vec::new(),
-            activation: None,
         }
     }
 
@@ -199,7 +197,6 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         Genome {
             hidden_nodes: hidden_nodes.len(),
             connections,
-            activation: None,
         }
     }
 
@@ -318,10 +315,9 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         1.0 / (1.0 + f32::exp(-x))
     }
 
-    pub fn activate<I, O>(&mut self, input: I) -> O
+    pub fn activate<I>(&self, input: I) -> GenomeActivation<INPUT_SZ, OUTPUT_SZ>
     where
         I: Into<[f32; INPUT_SZ]>,
-        O: From<[f32; OUTPUT_SZ]>,
     {
         let input = input.into();
         let mut activation = GenomeActivation::new(input, self.hidden_nodes);
@@ -331,25 +327,21 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
         // FIXME:
         for _ in 0..20 {
             if switch {
-                self.activate_step::<I, O>(&mut activation, &other_activation);
+                self.activate_step::<I>(&mut activation, &other_activation);
             } else {
-                self.activate_step::<I, O>(&mut other_activation, &activation);
+                self.activate_step::<I>(&mut other_activation, &activation);
             }
             switch = !switch;
         }
 
         if switch {
-            let tmp = other_activation.output.into();
-            self.activation = Some(other_activation);
-            tmp
+            other_activation
         } else {
-            let tmp = activation.output.into();
-            self.activation = Some(activation);
-            tmp
+            activation
         }
     }
 
-    pub fn activate_step<I, O>(
+    pub fn activate_step<I>(
         &self,
         activation: &mut GenomeActivation<INPUT_SZ, OUTPUT_SZ>,
         last_activation: &GenomeActivation<INPUT_SZ, OUTPUT_SZ>,
@@ -425,7 +417,6 @@ mod tests {
     #[test]
     fn test_distance() {
         dbg!(Genome::<2, 1> {
-            activation: None,
             hidden_nodes: 1,
             connections: vec![
                 Connection {
@@ -474,7 +465,6 @@ mod tests {
         }
         .distance(&Genome {
             hidden_nodes: 1,
-            activation: None,
             connections: vec![
                 Connection {
                     in_node: Node(0,),

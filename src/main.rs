@@ -46,7 +46,7 @@ impl Environment<2, 1> for XOREnv {
         let mut error = 0.0;
 
         for (input, output) in DATA {
-            let diff = genome.activate::<[f32; 2], [f32; 1]>(input)[0] - output[0];
+            let diff = genome.activate::<[f32; 2]>(input).output[0] - output[0];
             error += diff * diff;
         }
 

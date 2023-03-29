@@ -2,19 +2,30 @@ use crate::client::ClientId;
 use crate::force_directed_graph::{FDGraph, Graph, NodeEntity};
 use crate::genome::{Genome, GenomeActivation};
 use crate::node::Node;
-use eframe::egui::style::Margin;
-use eframe::egui::Frame;
 use eframe::egui::{CentralPanel, TopBottomPanel};
 use eframe::{egui, epaint::pos2};
-use rand::{thread_rng, Rng};
 
 const INPUT_OUTPUT_DIST: f32 = 35.0;
 const ADJACENT_NODE_DIST: f32 = 10.0;
 
+pub struct GenomeGraph<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
+    pub genome: Genome<INPUT_SZ, OUTPUT_SZ>,
+    pub activation: GenomeActivation<INPUT_SZ, OUTPUT_SZ>,
+}
+
+impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeGraph<INPUT_SZ, OUTPUT_SZ> {
+    pub fn update<I>(&mut self, input: I)
+    where
+        I: Into<[f32; INPUT_SZ]>,
+    {
+        self.activation = self.genome.activate(input);
+    }
+}
+
 pub struct GenomeVisualizer<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     client_id: ClientId,
     test_inputs: [f32; INPUT_SZ],
-    pub genome: Genome<INPUT_SZ, OUTPUT_SZ>,
+    pub genome_graph: GenomeGraph<INPUT_SZ, OUTPUT_SZ>,
     fd_graph: FDGraph<INPUT_SZ, OUTPUT_SZ>,
 }
 
@@ -52,24 +63,29 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> GenomeVisualizer<INPUT_SZ, O
     }
 
     pub fn new(genome: Genome<INPUT_SZ, OUTPUT_SZ>, client_id: ClientId) -> Self {
+        let test_inputs = [0.0; INPUT_SZ];
+
         Self {
             client_id,
-            test_inputs: [0.0; INPUT_SZ],
-            genome,
+            genome_graph: GenomeGraph {
+                activation: genome.activate::<[f32; INPUT_SZ]>(test_inputs.clone()),
+                genome,
+            },
+            test_inputs,
             fd_graph: FDGraph::with_spawner(Box::new(Self::spawner), true),
         }
     }
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Graph<INPUT_SZ, OUTPUT_SZ>
-    for Genome<INPUT_SZ, OUTPUT_SZ>
+    for GenomeGraph<INPUT_SZ, OUTPUT_SZ>
 {
     fn connected(
         &self,
         node_1: Node<INPUT_SZ, OUTPUT_SZ>,
         node_2: Node<INPUT_SZ, OUTPUT_SZ>,
     ) -> bool {
-        self.connections.iter().any(|connection| {
+        self.genome.connections.iter().any(|connection| {
             connection.enabled
                 && ((connection.in_node == node_1 && connection.out_node == node_2)
                     || (connection.in_node == node_2 && connection.out_node == node_1))
@@ -81,7 +97,8 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Graph<INPUT_SZ, OUTPUT_SZ>
         node_1: Node<INPUT_SZ, OUTPUT_SZ>,
         node_2: Node<INPUT_SZ, OUTPUT_SZ>,
     ) -> Option<String> {
-        self.connections
+        self.genome
+            .connections
             .iter()
             .find(|connection| {
                 connection.enabled
@@ -92,11 +109,11 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Graph<INPUT_SZ, OUTPUT_SZ>
     }
 
     fn node_text(&self, node: Node<INPUT_SZ, OUTPUT_SZ>) -> Option<String> {
-        Some(format!("{:.2}", self.activation.as_ref()?[node]))
+        Some(format!("{:.2}", self.activation[node]))
     }
 
     fn size(&self) -> usize {
-        self.nodes()
+        self.genome.nodes()
     }
 }
 
@@ -125,12 +142,11 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> egui::Widget
         });
 
         if updated {
-            self.genome
-                .activate::<[f32; INPUT_SZ], [f32; OUTPUT_SZ]>(self.test_inputs.clone());
+            self.genome_graph.update(self.test_inputs.clone());
         }
 
         CentralPanel::default()
-            .show_inside(ui, |ui| self.fd_graph.show(ui, &self.genome, |_| {}))
+            .show_inside(ui, |ui| self.fd_graph.show(ui, &self.genome_graph, |_| {}))
             .response
     }
 }

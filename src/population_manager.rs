@@ -34,7 +34,10 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
             {
                 ui.label(format!(
                     "Distance: {}",
-                    vis_1.genome.distance(&vis_2.genome)
+                    vis_1
+                        .genome_graph
+                        .genome
+                        .distance(&vis_2.genome_graph.genome)
                 ));
             }
 
