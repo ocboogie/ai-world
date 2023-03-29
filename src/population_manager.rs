@@ -15,6 +15,7 @@ const GENOME_WINDOW_SIZE: f32 = 350.0;
 pub struct PopulationManager<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     fd_graph: FDGraph<INPUT_SZ, OUTPUT_SZ>,
     genomes_open: Vec<GenomeVisualizer<INPUT_SZ, OUTPUT_SZ>>,
+    // genome_hovered: Option<GenomeVisualizer<INPUT_SZ, OUTPUT_SZ>>,
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, OUTPUT_SZ> {
@@ -69,13 +70,31 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
                     for species in speciation.species.values() {
                         body.row(interact_height, |mut row| {
                             row.col(|ui| {
-                                if ui.button(&species.id.to_string()[..6]).clicked() {
+                                let res = ui.button(&species.id.to_string()[..6]);
+                                if res.clicked() {
                                     let champion = evaluation.species_champion(species).0;
                                     let genome = population.members[champion].clone();
 
                                     self.genomes_open
                                         .push(GenomeVisualizer::new(genome, champion));
                                 }
+
+                                // if !res
+                                //     .on_hover_ui_at_pointer(|ui| {
+                                //         let vis = self.genome_hovered.get_or_insert_with(|| {
+                                //             dbg!();
+                                //             let champion = evaluation.species_champion(species).0;
+                                //             let genome = population.members[champion].clone();
+                                //             GenomeVisualizer::new(genome, champion)
+                                //         });
+                                //
+                                //         ui.add(vis);
+                                //     })
+                                //     .is_tooltip_open()
+                                // {
+                                //     dbg!();
+                                //     self.genome_hovered = None;
+                                // }
                             });
                             row.col(|ui| {
                                 ui.label(species.members.len().to_string());
@@ -105,16 +124,11 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
             });
         });
 
-        // FIXME
-        let mut hack = 0;
-
         self.genomes_open
             .retain_mut(|visualizer: &mut GenomeVisualizer<INPUT_SZ, OUTPUT_SZ>| {
                 let mut open = true;
 
-                hack += 1;
-
-                egui::Window::new(hack.to_string())
+                egui::Window::new(visualizer.genome_graph.genome.identifier())
                     .default_size(Vec2::splat(GENOME_WINDOW_SIZE))
                     .open(&mut open)
                     .show(ctx, |ui| {

@@ -24,6 +24,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Species<INPUT_SZ, OUTPUT_SZ>
             evaluation.fitness[member_b].total_cmp(&evaluation.fitness[member_a])
         });
     }
+
     //
     // pub fn reproduce(
     //     &mut self,

@@ -7,7 +7,8 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_distr::{Distribution, Normal, StandardNormal};
 use std::{
-    collections::HashSet,
+    collections::{hash_map::DefaultHasher, HashSet},
+    hash::{Hash, Hasher},
     ops::{Index, IndexMut, RangeInclusive},
 };
 
@@ -28,7 +29,7 @@ const CROSSOVER_DISABLE_CONNECTION_PROB: f64 = 0.75;
 const DIST_DISJOINT_FACTOR: f32 = 1.0;
 const DIST_WEIGHT_DIFFERENCE_FACTOR: f32 = 2.0;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Genome<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     pub hidden_nodes: usize,
     // TODO: Make innovation number the index into a hash set instead of using
@@ -105,6 +106,14 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Genome<INPUT_SZ, OUTPUT_SZ> 
             hidden_nodes: 0,
             connections: Vec::new(),
         }
+    }
+
+    pub fn identifier(&self) -> String {
+        let mut hasher = DefaultHasher::default();
+
+        self.hash(&mut hasher);
+
+        format!("{:x}", hasher.finish()).to_string()
     }
 
     pub fn new_random_initial(

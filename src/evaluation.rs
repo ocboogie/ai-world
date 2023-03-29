@@ -73,6 +73,10 @@ impl Evaluation {
             .expect("Can't find champion of empty evaluation")
     }
 
+    pub fn average_fitness(&self) -> f32 {
+        self.fitness.values().sum::<f32>() / self.fitness.len() as f32
+    }
+
     pub fn species_champion<const INPUT_SZ: usize, const OUTPUT_SZ: usize>(
         &self,
         species: &Species<INPUT_SZ, OUTPUT_SZ>,

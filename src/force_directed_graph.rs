@@ -182,7 +182,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> FDGraph<INPUT_SZ, OUTPUT_SZ>
         let to_screen = emath::RectTransform::from_to(world_space, painter.clip_rect());
         let from_screen = emath::RectTransform::from_to(painter.clip_rect(), world_space);
 
-        let dt = ui.input().stable_dt;
+        let dt = ui.input(|i| i.stable_dt);
         ui.ctx().request_repaint();
         self.update(dt as f32, graph, world_space);
 
@@ -230,7 +230,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> FDGraph<INPUT_SZ, OUTPUT_SZ>
             }
 
             if point_response.dragged() {
-                if let Some(pos) = ui.input().pointer.hover_pos() {
+                if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
                     entity.pos = from_screen * pos;
                 }
             }

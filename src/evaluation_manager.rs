@@ -4,7 +4,13 @@ use crate::{
     speciation::Speciation,
 };
 
-use eframe::egui;
+use eframe::{
+    egui::{
+        self,
+        plot::{Corner, Legend},
+    },
+    epaint::Vec2,
+};
 
 struct Generation<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     population: Population<INPUT_SZ, OUTPUT_SZ>,
@@ -78,6 +84,44 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize, E: Environment<INPUT_SZ, OUT
         self.selected_generation = self
             .selected_generation
             .clamp(0, self.history.len().saturating_sub(1));
+
+        egui::Window::new("My Window").show(ctx, |ui| {
+            use egui::plot::{Line, Plot, PlotPoints};
+            let max_fitness: PlotPoints = self
+                .history
+                .iter()
+                .enumerate()
+                .map(|(i, gen)| [i as f64, gen.evaluation.champion().1 as f64])
+                .collect();
+            let max_fitness_line = Line::new(max_fitness).name("Champion Fitness");
+            let avg_fitness: PlotPoints = self
+                .history
+                .iter()
+                .enumerate()
+                .map(|(i, gen)| [i as f64, gen.evaluation.average_fitness() as f64])
+                .collect();
+            let avg_fitness_line = Line::new(avg_fitness).name("Average Fitness");
+
+            Plot::new("my_plot")
+                .clamp_grid(true)
+                .allow_drag(false)
+                .allow_zoom(false)
+                .allow_scroll(false)
+                .set_margin_fraction(Vec2::splat(0.1))
+                .label_formatter(|name, value| {
+                    if !name.is_empty() {
+                        format!("{:.2}", value.y).to_owned()
+                    } else {
+                        "".to_owned()
+                    }
+                })
+                .legend(Legend::default().position(Corner::RightBottom))
+                .view_aspect(2.0)
+                .show(ui, |plot_ui| {
+                    plot_ui.line(max_fitness_line);
+                    plot_ui.line(avg_fitness_line);
+                });
+        });
 
         if let Some(Generation {
             population,
