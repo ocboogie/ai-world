@@ -1,20 +1,12 @@
-use std::collections::HashMap;
-
 use crate::{
-    client::ClientId,
     evaluation::Evaluation,
     force_directed_graph::{FDGraph, Graph},
-    genome::Genome,
     genome_visualizer::GenomeVisualizer,
     node::Node,
     population::Population,
     speciation::Speciation,
 };
-use eframe::{
-    egui,
-    epaint::{vec2, Vec2},
-    Frame,
-};
+use eframe::{egui, epaint::Vec2};
 use egui_extras::{Column, TableBuilder};
 
 const GENOME_WINDOW_SIZE: f32 = 200.0;
@@ -55,9 +47,11 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
                 .column(Column::auto())
                 .column(Column::initial(30.0))
                 .column(Column::initial(60.0))
-                .column(Column::initial(60.0))
+                .column(Column::remainder().at_least(30.0))
                 .header(interact_height, |mut header| {
-                    header.col(|_| {});
+                    header.col(|ui| {
+                        ui.label("ID");
+                    });
                     header.col(|ui| {
                         ui.label("Size");
                     });
@@ -95,25 +89,6 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
                         });
                     }
                 });
-            // egui::ScrollArea::vertical()
-            //     .auto_shrink([false; 2])
-            //     .max_width(f32::INFINITY)
-            //     .show(ui, |ui| {
-            //         egui::Grid::new("some_unique_id")
-            //             .num_columns(2)
-            //             .striped(true)
-            //             .show(ui, |ui| {
-            //                 ui.label("Size");
-            //                 ui.label("Average fitness");
-            //                 ui.end_row();
-            //
-            //                 for species in speciation.species.values() {
-            //                     ui.label(&species.members.len().to_string());
-            //                     ui.label(&evaluation.species_average_fitness(species).to_string());
-            //                     ui.end_row();
-            //                 }
-            //             })
-            //     });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
