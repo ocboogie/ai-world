@@ -12,6 +12,7 @@ use std::{collections::HashMap, iter};
 const INTERSPECIE_MATE_PROB: f64 = 0.003;
 const SURVIVAL_THRESHOLD: f32 = 0.2;
 const MUTATION_PROB: f64 = 0.2;
+const STAGNANT_THRESHOLD: usize = 15;
 
 #[derive(Clone)]
 pub struct Population<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
@@ -123,7 +124,10 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
     pub fn kill_stagnant_species(&mut self, speciation: &mut Speciation<INPUT_SZ, OUTPUT_SZ>) {
         speciation
             .species
-            .retain(|_, species| species.age == 0 || species.members.len() > 1);
+            .retain(|_, species| species.since_last_improvement < STAGNANT_THRESHOLD)
+        // speciation
+        //     .species
+        //     .retain(|_, species| species.age == 0 || species.members.len() > 1);
     }
 
     pub fn reproduce(
@@ -158,7 +162,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
                 //     * self.target_size as f32)
                 //     .round() as usize;
 
-                let champion_id = dbg!(evaluation.species_champion(species)).0;
+                let champion_id = evaluation.species_champion(species).0;
                 let champion_genome = self.members[champion_id].clone();
 
                 iter::repeat_with(|| self.breed(evaluation, survivors))
@@ -188,7 +192,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
         rng: &mut impl Rng,
         innovation_record: &mut InnovationRecord<INPUT_SZ, OUTPUT_SZ>,
     ) {
-        // self.kill_stagnant_species(speciation);
+        self.kill_stagnant_species(speciation);
         self.reproduce(evaluation, speciation);
         self.mutate(rng, innovation_record);
     }
@@ -197,6 +201,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
         &mut self,
         rng: &mut impl Rng,
         last_speciation: Option<&Speciation<INPUT_SZ, OUTPUT_SZ>>,
+        last_evaluation: Option<&Evaluation>,
     ) -> Speciation<INPUT_SZ, OUTPUT_SZ> {
         let mut member_map = HashMap::new();
         let mut species: HashMap<_, Species<INPUT_SZ, OUTPUT_SZ>> = HashMap::new();
@@ -213,6 +218,10 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
                 if let Some(compatible_species) = species.get_mut(&last_species.id) {
                     compatible_species.members.push(member_id);
                 } else {
+                    let max_fitness = last_evaluation
+                        .map(|eval| eval.species_max_fitness(last_species))
+                        .unwrap_or(last_species.max_fitness);
+
                     species.insert(
                         last_species.id,
                         Species {
@@ -220,6 +229,12 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
                             members: vec![member_id],
                             id: last_species.id,
                             age: last_species.age + 1,
+                            max_fitness: last_species.max_fitness.max(max_fitness),
+                            since_last_improvement: if max_fitness > last_species.max_fitness {
+                                0
+                            } else {
+                                last_species.since_last_improvement + 1
+                            },
                         },
                     );
                 }
@@ -235,6 +250,8 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Population<INPUT_SZ, OUTPUT_
                         members: vec![member_id],
                         id: species_id,
                         age: 0,
+                        max_fitness: 0.0,
+                        since_last_improvement: 0,
                     },
                 );
 

@@ -77,7 +77,7 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> PopulationManager<INPUT_SZ, 
                                     let genome = population.members[champion].clone();
 
                                     self.genomes_open
-                                        .push(GenomeVisualizer::new(dbg!(genome), champion));
+                                        .push(GenomeVisualizer::new(genome, champion));
                                 }
                             });
                             row.col(|ui| {

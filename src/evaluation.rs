@@ -25,6 +25,23 @@ impl Evaluation {
             / species.members.len() as f32
     }
 
+    pub fn species_max_fitness<const INPUT_SZ: usize, const OUTPUT_SZ: usize>(
+        &self,
+        species: &Species<INPUT_SZ, OUTPUT_SZ>,
+    ) -> f32 {
+        species
+            .members
+            .iter()
+            .map(|id| {
+                *self
+                    .fitness
+                    .get(id)
+                    .expect("Could not find member in species")
+            })
+            .max_by(|a, b| a.total_cmp(b))
+            .expect("Can't find max fitness")
+    }
+
     pub fn species_average_adjusted_fitness<const INPUT_SZ: usize, const OUTPUT_SZ: usize>(
         &self,
         species: &Species<INPUT_SZ, OUTPUT_SZ>,

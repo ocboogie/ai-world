@@ -10,6 +10,8 @@ pub struct Species<const INPUT_SZ: usize, const OUTPUT_SZ: usize> {
     pub members: Vec<ClientId>,
     pub age: usize,
     pub id: SpeciesId,
+    pub max_fitness: f32,
+    pub since_last_improvement: usize,
 }
 
 impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize> Species<INPUT_SZ, OUTPUT_SZ> {

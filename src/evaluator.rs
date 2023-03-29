@@ -49,10 +49,11 @@ impl<const INPUT_SZ: usize, const OUTPUT_SZ: usize, E: Environment<INPUT_SZ, OUT
             );
         }
 
-        self.last_speciation = Some(
-            self.population
-                .speciate(&mut self.rng, self.last_speciation.as_ref()),
-        );
+        self.last_speciation = Some(self.population.speciate(
+            &mut self.rng,
+            self.last_speciation.as_ref(),
+            self.last_evaluation.as_ref(),
+        ));
 
         self.last_evaluation = Some(self.population.evaluate(&mut self.env));
     }
